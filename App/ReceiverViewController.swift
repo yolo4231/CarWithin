@@ -2111,7 +2111,7 @@ extension ReceiverViewController {
             if let profile = outputMode.zeehoProfile {
                 let size = profile.usesInstrumentDimensions ? "按仪表协商" : "\(profile.width)×\(profile.height)"
                 return [
-                    SettingsSection(headUnitOutput.selectedTitle, [.info("仪表画面", "\(size) · H.264 · 最高 \(ZeehoOutput.fps) FPS")]),
+                    SettingsSection(headUnitOutput.selectedTitle, [.info("仪表画面", "\(size) · H.264 · 最高 \(profile.outputFPS) FPS")]),
                     SettingsSection("图标", [.control("CarPlay 图标大小", icon: ("square.grid.2x2.fill", .systemPurple), iconSizeControl)])
                 ]
             }

@@ -4,8 +4,6 @@ import VideoToolbox
 
 /// Runs codecs and UDP writes off the CarPlay receive queue.
 final class ZeehoOutput {
-    static let fps = 25
-
     private let queue = DispatchQueue(label: "CarWithin.zeeho", qos: .userInitiated)
     private var session: Session?
 
@@ -47,6 +45,7 @@ final class ZeehoOutput {
         private var encoded: Result<H264EncodedFrame, Error>?
 
         private let connection: TailingConnection
+        private let outputFPS: Int
         private var decoder: TailingH264Decoder?
         private var encoder: H264Encoder?
         private var parameters = VideoParameterSets(codec: .h264)
@@ -68,6 +67,7 @@ final class ZeehoOutput {
              phone: TailingPhoneInfo, onState: @escaping (String) -> Void, onLog: @escaping (String) -> Void,
              requestKeyframe: @escaping () -> Void) {
             self.queue = queue
+            self.outputFPS = profile.outputFPS
             self.connection = TailingConnection(localIP: localAddress, targetIP: targetAddress,
                 profile: profile, phone: phone, log: onLog)
             self.onState = onState
@@ -93,7 +93,7 @@ final class ZeehoOutput {
                         let remaining = nextFrame - ProcessInfo.processInfo.systemUptime
                         if remaining > 0 { Thread.sleep(forTimeInterval: min(remaining, 0.04)); continue }
                         try connection.waitForH264Request()
-                        nextFrame = ProcessInfo.processInfo.systemUptime + 1.0 / Double(ZeehoOutput.fps)
+                        nextFrame = ProcessInfo.processInfo.systemUptime + 1.0 / Double(outputFPS)
                         guard active else { break }
                         let result = queue.sync { () -> H264EncodedFrame? in
                             guard active, let image = latest else { return nil }
@@ -207,7 +207,7 @@ final class ZeehoOutput {
                 if encoder == nil {
                     guard now - lastCodecFailure >= 0.5 else { return nil }
                     encoder = try H264Encoder(width: width, height: height,
-                                              fps: ZeehoOutput.fps, bitrate: 2_500_000) { [weak self] result in
+                                              fps: outputFPS, bitrate: 2_500_000) { [weak self] result in
                         guard let self else { return }
                         self.lock.withLock { self.encoded = result }
                     }

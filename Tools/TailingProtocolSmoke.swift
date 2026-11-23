@@ -47,6 +47,8 @@ struct TailingTests {
         try simulatedInstrument(identity: stableIdentity, profile: .zeeho62)
         // Use a synthetic display size to prove the negotiated reply is not the AE4 default.
         try simulatedInstrument(identity: stableIdentity, profile: .zeehoAE3Pro, reportedSize: (800, 480))
+        try expect(TailingDisplayProfile.zeehoAE3Pro.outputFPS == 30 && TailingDisplayProfile.zeeho62.outputFPS == 25,
+                   "AE3 Pro 5 寸与极核 6.2 寸必须使用各自的帧率上限")
         try expect(TailingDisplayProfile.zeehoAE3Pro.videoSize(reportedWidth: 801, reportedHeight: 480) == nil, "拒绝奇数 H.264 宽度")
         try expect(TailingDisplayProfile.zeehoAE3Pro.videoSize(reportedWidth: 65534, reportedHeight: 480) == nil, "拒绝超出编码范围的宽度")
         try rejectedInstrument()

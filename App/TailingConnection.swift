@@ -2,11 +2,12 @@
 struct TailingDisplayProfile {
     let width: Int
     let height: Int
+    let outputFPS: Int
     let isZeeho: Bool
     var usesInstrumentDimensions = false
-    static let tailing43 = TailingDisplayProfile(width: 480, height: 272, isZeeho: false)
-    static let zeeho62 = TailingDisplayProfile(width: 1024, height: 480, isZeeho: true)
-    static let zeehoAE3Pro = TailingDisplayProfile(width: 1024, height: 480, isZeeho: true, usesInstrumentDimensions: true)
+    static let tailing43 = TailingDisplayProfile(width: 480, height: 272, outputFPS: 20, isZeeho: false)
+    static let zeeho62 = TailingDisplayProfile(width: 1024, height: 480, outputFPS: 25, isZeeho: true)
+    static let zeehoAE3Pro = TailingDisplayProfile(width: 1024, height: 480, outputFPS: 30, isZeeho: true, usesInstrumentDimensions: true)
 
     func videoSize(reportedWidth: Int, reportedHeight: Int) -> (width: Int, height: Int)? {
         if usesInstrumentDimensions {

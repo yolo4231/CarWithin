@@ -113,6 +113,25 @@ final class ReleaseDownload: NSObject, ObservableObject, URLSessionDownloadDeleg
 }
 
 struct ReleaseHistoryView: View {
+    private struct EvoPlayRelease: Identifiable {
+        let version: String
+        let notes: String
+        var id: String { version }
+    }
+
+    private static let evoPlayReleases = [
+        EvoPlayRelease(version: "1.0.5", notes: """
+            - 极核 AE3 Pro 5 寸预设转为正式支持。
+            - AE3 Pro 5 寸仪表投屏上限从 25 FPS 提高至 30 FPS，实际帧率取决于仪表取帧速度和连接状况。
+            """),
+        EvoPlayRelease(version: "1.0.4", notes: """
+            - 新增极核 AE3 Pro 5 寸仪表输出，经实车验证可投屏。
+            - 应用更名为 EvoPlay，精简设置和关于页，移除作者关注、赞赏、项目链接及更新检查入口，停用后台自动更新检查。
+            - 保留版本记录和更新说明，移除版本页面的外部查看入口。
+            - 修正本地 IPA 的 MFi 配件身份资源权限。
+            """)
+    ]
+
     let installed: String
     let canDownload: () -> Bool
     @State private var releases: [AppRelease] = []
@@ -124,27 +143,25 @@ struct ReleaseHistoryView: View {
     var body: some View {
         List {
             Section("EvoPlay") {
-                NavigationLink {
-                    ScrollView {
-                        ReleaseNotesView(markdown: """
-                            # EvoPlay \(installed)
-
-                            - 新增极核 AE3 Pro 5 寸仪表输出，经实车验证可投屏。
-                            - 应用更名为 EvoPlay，精简设置和关于页面。
-                            - 保留版本记录与更新说明。
-                            """)
-                            .padding(24)
-                            .frame(maxWidth: 720, alignment: .leading)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .background(Color(uiColor: .systemGroupedBackground))
-                    .navigationTitle("版本更新记录")
-                    .navigationBarTitleDisplayMode(.inline)
-                } label: {
-                    HStack {
-                        Text("EvoPlay \(installed)")
-                        Spacer()
-                        Text("当前安装").foregroundStyle(.secondary).font(.caption)
+                ForEach(Self.evoPlayReleases) { release in
+                    NavigationLink {
+                        ScrollView {
+                            ReleaseNotesView(markdown: "# EvoPlay \(release.version)\n\n\(release.notes)")
+                                .padding(24)
+                                .frame(maxWidth: 720, alignment: .leading)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .background(Color(uiColor: .systemGroupedBackground))
+                        .navigationTitle("版本更新记录")
+                        .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        HStack {
+                            Text("EvoPlay \(release.version)")
+                            if release.version == installed {
+                                Spacer()
+                                Text("当前安装").foregroundStyle(.secondary).font(.caption)
+                            }
+                        }
                     }
                 }
             }

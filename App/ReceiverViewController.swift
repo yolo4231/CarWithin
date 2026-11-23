@@ -2439,7 +2439,7 @@ extension ReceiverViewController {
                     .note(zeehoStatus)
                 ])]
             case .zeehoAE3Pro:
-                return [SettingsSection("极核 AE3 Pro 5 寸（试验）", footer: "让 iPhone 加入仪表 Wi-Fi，退出原厂投屏，在仪表重新打开投屏后启动 CarPlay。画面尺寸由仪表协商，声音由 iPhone 或蓝牙输出。", [
+                return [SettingsSection("极核 AE3 Pro 5 寸", footer: "让 iPhone 加入仪表 Wi-Fi，退出原厂投屏，在仪表重新打开投屏后启动 CarPlay。画面尺寸由仪表协商，声音由 iPhone 或蓝牙输出。", [
                     .field("仪表 IP 地址", zeehoAE3ProAddressField, placeholder: "192.168.0.1"),
                     .note(zeehoStatus)
                 ])]

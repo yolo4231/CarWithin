@@ -3,8 +3,21 @@ struct TailingDisplayProfile {
     let width: Int
     let height: Int
     let isZeeho: Bool
+    var usesInstrumentDimensions = false
     static let tailing43 = TailingDisplayProfile(width: 480, height: 272, isZeeho: false)
     static let zeeho62 = TailingDisplayProfile(width: 1024, height: 480, isZeeho: true)
+    static let zeehoAE3Pro = TailingDisplayProfile(width: 1024, height: 480, isZeeho: true, usesInstrumentDimensions: true)
+
+    func videoSize(reportedWidth: Int, reportedHeight: Int) -> (width: Int, height: Int)? {
+        if usesInstrumentDimensions {
+            // Bound allocations and require even dimensions for the H.264 encoder.
+            guard (320...1920).contains(reportedWidth), (240...1080).contains(reportedHeight),
+                  reportedWidth >= reportedHeight, reportedWidth.isMultiple(of: 2), reportedHeight.isMultiple(of: 2) else { return nil }
+            return (reportedWidth, reportedHeight)
+        }
+        guard reportedWidth == width, reportedHeight == height || (isZeeho && reportedHeight == 488) else { return nil }
+        return (width, height)
+    }
 }
 
 import Foundation
@@ -57,6 +70,7 @@ final class TailingConnection: @unchecked Sendable {
     private var sentH264Prefix = false
     private var mediaStarted = false
     private var configured = false
+    private var mediaSize: (width: Int, height: Int)?
     private var isZeeho: Bool { profile.isZeeho }
     private var dashboard: String { profile.isZeeho ? "极核" : "台铃" }
 
@@ -117,6 +131,14 @@ final class TailingConnection: @unchecked Sendable {
 
     func waitForH264Request() throws {
         _ = try readFrameRequest()
+    }
+
+    func negotiatedVideoSize() throws -> (width: Int, height: Int) {
+        condition.lock()
+        defer { condition.unlock() }
+        try checkLocked()
+        guard let mediaSize else { throw TailingError.protocolFailure("未收到仪表媒体尺寸") }
+        return mediaSize
     }
 
     // 视频请求与发送由同一个会话任务顺序执行。
@@ -377,9 +399,7 @@ final class TailingConnection: @unchecked Sendable {
                 }
                 let width = request.payload.uint16LE(0)
                 let height = request.payload.uint16LE(2)
-                let validDimensions = isZeeho ? width == 1024 && (height == 480 || height == 488)
-                    : width == 480 && height == 272
-                guard validDimensions else {
+                guard let size = profile.videoSize(reportedWidth: Int(width), reportedHeight: Int(height)) else {
                     throw TailingError.protocolFailure("仪表媒体尺寸 \(width)×\(height) 与 \(dashboard) 配置不符")
                 }
                 let deadline = Date().addingTimeInterval(5)
@@ -394,11 +414,17 @@ final class TailingConnection: @unchecked Sendable {
                       echoed == signature else { throw TailingError.protocolFailure("媒体身份回显不匹配") }
                 try identity.verify(echoed, huid: huid)
                 payload.appendLE(UInt32(isZeeho ? 2 : 1))
-                payload.appendLE(UInt16(profile.width))
-                payload.appendLE(UInt16(profile.height))
+                payload.appendLE(UInt16(size.width))
+                payload.appendLE(UInt16(size.height))
                 response = 0x11
-                condition.lock(); configured = true; condition.unlock()
-                log("媒体身份回显校验通过，仪表报告 \(width)×\(height)，回应 \(isZeeho ? "H.264" : "JPEG") / \(profile.width)×\(profile.height)")
+                condition.lock()
+                if let mediaSize, mediaSize != size {
+                    condition.unlock()
+                    throw TailingError.protocolFailure("仪表在当前投屏会话中变更媒体尺寸，请重新连接")
+                }
+                mediaSize = size; configured = true
+                condition.unlock()
+                log("媒体身份回显校验通过，仪表报告 \(width)×\(height)，回应 \(isZeeho ? "H.264" : "JPEG") / \(size.width)×\(size.height)")
             case 0x70:
                 condition.lock(); let ready = configured; condition.unlock()
                 guard ready else { throw TailingError.protocolFailure("仪表在配置完成前请求媒体启动") }

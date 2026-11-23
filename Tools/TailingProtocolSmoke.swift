@@ -45,6 +45,10 @@ struct TailingTests {
         try simulatedInstrument(identity: stableIdentity)
         try simulatedInstrument(identity: stableIdentity, profile: .zeeho62)
         try simulatedInstrument(identity: stableIdentity, profile: .zeeho62)
+        // Use a synthetic display size to prove the negotiated reply is not the AE4 default.
+        try simulatedInstrument(identity: stableIdentity, profile: .zeehoAE3Pro, reportedSize: (800, 480))
+        try expect(TailingDisplayProfile.zeehoAE3Pro.videoSize(reportedWidth: 801, reportedHeight: 480) == nil, "拒绝奇数 H.264 宽度")
+        try expect(TailingDisplayProfile.zeehoAE3Pro.videoSize(reportedWidth: 65534, reportedHeight: 480) == nil, "拒绝超出编码范围的宽度")
         try rejectedInstrument()
         try cancelledHandshake()
         print("PASS: 台铃拆包/合包、长度校验、RSA2048/type1、TCP取消、模拟仪表握手/逐帧拉取/保活/重启、错误型号拒绝、协商中停止")
@@ -111,7 +115,8 @@ struct TailingTests {
     }
 
     private static func simulatedInstrument(identity: TailingIdentity, idleControlFrames: Int = 0,
-                                            profile: TailingDisplayProfile = .tailing43) throws {
+                                            profile: TailingDisplayProfile = .tailing43,
+                                            reportedSize: (width: UInt16, height: UInt16)? = nil) throws {
         let announcement = try TailingSocket.listening(localIP: "127.0.0.1", port: 0)
         defer { announcement.close() }
         let reservations = try (0..<3).map { _ in try TailingSocket.listening(localIP: "127.0.0.1", port: 0) }
@@ -129,6 +134,10 @@ struct TailingTests {
         let gotHeartbeat = DispatchSemaphore(value: 0)
         let idleFramesReceived = DispatchSemaphore(value: 0)
         let isZeeho = profile.isZeeho
+        let width = reportedSize?.width ?? UInt16(profile.width)
+        let height = reportedSize?.height ?? (isZeeho ? 488 : UInt16(profile.height))
+        let expectedWidth = reportedSize?.width ?? UInt16(profile.width)
+        let expectedHeight = reportedSize?.height ?? UInt16(profile.height)
         let jpeg = Data([0xff, 0xd8, 1, 2, 0xff, 0xd9])
         let accessUnit = Data([0, 0, 0, 1, 0x65, 1, 2, 3])
         DispatchQueue.global().async {
@@ -189,15 +198,15 @@ struct TailingTests {
                 }
                 let aux = try connect(ports.auxiliary)
                 var config = Data()
-                config.appendLE(UInt16(isZeeho ? 1024 : 480))
-                config.appendLE(UInt16(isZeeho ? 488 : 272))
+                config.appendLE(width)
+                config.appendLE(height)
                 config.append(Data(repeating: 0, count: 28)); config.append(Data(signature.base64EncodedString().utf8))
                 try aux.write(TailingProtocol.auxiliary(0x10, token: 57, payload: config))
                 let configured = try TailingProtocol.readAuxiliary { try aux.readExactly($0) }
                 try expect(configured.command == 0x11 && configured.token == 57 &&
                            configured.payload.uint32LE(0) == (isZeeho ? 2 : 1) &&
-                           configured.payload.uint16LE(4) == profile.width &&
-                           configured.payload.uint16LE(6) == profile.height, "媒体配置回应")
+                           configured.payload.uint16LE(4) == expectedWidth &&
+                           configured.payload.uint16LE(6) == expectedHeight, "媒体配置回应")
                 // 连续心跳、启动请求，验证不会丢弃配置后的消息。
                 try aux.write(TailingProtocol.auxiliary(0x40, token: 58) + TailingProtocol.auxiliary(0x70, token: 59))
                 try expect(try TailingProtocol.readAuxiliary { try aux.readExactly($0) }.token == 58, "媒体心跳回应")
@@ -240,6 +249,8 @@ struct TailingTests {
             } catch { result.set(error); sawFrame.signal(); gotHeartbeat.signal(); idleFramesReceived.signal() }
         }
         try connection.start()
+        let negotiatedSize = try connection.negotiatedVideoSize()
+        try expect(negotiatedSize.width == Int(expectedWidth) && negotiatedSize.height == Int(expectedHeight), "编码尺寸必须与媒体配置回应一致")
         if isZeeho {
             for _ in 0..<2 {
                 try connection.waitForH264Request()

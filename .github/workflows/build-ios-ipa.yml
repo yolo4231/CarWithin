@@ -1,0 +1,51 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main, ae3-pro]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Check PXC negotiation
+        run: bash Tools/test_tailing.sh
+
+      - name: Build unsigned iPhone app
+        run: |
+          xcodebuild -project TDSCarKit.xcodeproj -scheme TDSCarKit \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/carwithin-build" \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Package and check IPA
+        run: |
+          app="$RUNNER_TEMP/carwithin-build/Build/Products/Release-iphoneos/TDSCarKit.app"
+          staging="$RUNNER_TEMP/ipa-staging"
+          ipa="$RUNNER_TEMP/CarWithin-AE3-Pro-unsigned.ipa"
+          test -f "$app/Info.plist"
+          test "$(lipo -archs "$app/TDSCarKit")" = arm64
+          mkdir -p "$staging/Payload"
+          ditto "$app" "$staging/Payload/TDSCarKit.app"
+          ditto -c -k --keepParent "$staging/Payload" "$ipa"
+          unzip -tq "$ipa"
+          unzip -p "$ipa" Payload/TDSCarKit.app/Info.plist | plutil -lint -
+          shasum -a 256 "$ipa" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CarWithin-AE3-Pro-unsigned
+          path: ${{ runner.temp }}/CarWithin-AE3-Pro-unsigned.ipa
+          if-no-files-found: error

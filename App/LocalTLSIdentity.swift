@@ -249,13 +249,13 @@ extension LocalTLSIdentity {
     static func setupPage(root: Data, port: UInt16) -> Data {
         Data("""
         <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>CarWithin HTTPS</title><style>
+        <title>EvoPlay HTTPS</title><style>
         :root{color-scheme:light dark}body{max-width:40rem;margin:3rem auto;padding:0 1rem;font:16px/1.6 system-ui}
         code{overflow-wrap:anywhere}li{margin:.75rem 0}
         </style>
-        <h1>配置 CarWithin HTTPS</h1>
+        <h1>配置 EvoPlay HTTPS</h1>
         <ol>
-        <li>在 CarWithin 的日志中核对根证书 SHA-256<br><code>\(fingerprint(root))</code></li>
+        <li>在 EvoPlay 的日志中核对根证书 SHA-256<br><code>\(fingerprint(root))</code></li>
         <li>iPhone / iPad：<a href="/carwithin.mobileconfig">下载描述文件</a>，在「设置」安装。之后进入「通用 → 关于本机 → 证书信任设置」，为该证书启用完全信任。</li>
         <li>Android：<a href="/carwithin.crt" download>下载 CA 证书</a>，在系统「设置」搜索「安装证书」，选择「CA 证书」，安装下载的文件。不同机型的菜单名称可能不同。安装后用支持系统用户证书的浏览器打开 HTTPS 接收页。</li>
         </ol>

@@ -234,24 +234,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var displayedVideo = false
     private var identity: AccessoryIdentity?
     private var running = false
-    private var checkingForUpdates = false
-    private var updateCheckTask: Task<Void, Never>?
-    private var updateTimer: Timer?
-    private weak var updateSheet: UIViewController?
-    private var updateSheetAutomatic = false
-    private static let projectURL = URL(string: "https://github.com/xmz28/CarWithin")!
-    private static let releasesURL = projectURL.appendingPathComponent("releases")
-    private static let supportURL = URL(string: "https://qr.alipay.com/fkx16608y1puemmltuocze0")!
-    private static let authorURL = URL(string: "https://v.douyin.com/x64M2NbYj0A/")!
+    private weak var historySheet: UIViewController?
     private var lines: [String] = []
     private var launchedTransportTest = false
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if !running { modeChanged() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.checkForUpdates(manual: false)
-        }
         #if DEBUG
         if !launchedTransportTest, ProcessInfo.processInfo.arguments.contains("--test-same-device-transport") {
             launchedTransportTest = true
@@ -270,11 +259,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 "vehicle": vehiclePage, "sound": soundPage, "output": headUnitPage,
                 "tailing": { [unowned self] in self.headUnitOutput.selectedSegmentIndex = HeadUnitOutput.tailing.rawValue; self.refreshVideoOutputSummary(); return self.headUnitPage() },
                 "web": headUnitPage, "log": logPage, "lab": diagnosticsPage, "about": aboutPage,
-                "usage": usagePage, "updates": aboutPage, "https": httpsSettingsPage]
+                    "usage": usagePage, "https": httpsSettingsPage]
             if arguments.indices.contains(index + 1), let make = pages[arguments[index + 1]] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                     self?.settingsNavigation?.pushViewController(make(), animated: false)
-                    if arguments[index + 1] == "updates" { self?.checkForUpdates() }
                 }
             } else if arguments.indices.contains(index + 1), arguments[index + 1] == "history" {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -287,7 +275,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "CarWithin"
+        title = "EvoPlay"
         navigationItem.largeTitleDisplayMode = .never
         view.backgroundColor = .systemGroupedBackground
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "gearshape.fill"), style: .plain, target: self, action: #selector(toggleSettings))
@@ -302,8 +290,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         statusLabel.textColor = .systemBlue
         let savedName = UserDefaults.standard.string(forKey: "receiverName")
         // Earlier default names follow the rename; a name the user typed is kept.
-        let legacyDefaults: Set<String> = ["TDS Car Kit", "CarPlays"]
-        nameField.text = savedName.map { legacyDefaults.contains($0) ? "CarWithin" : $0 } ?? "CarWithin"
+        let legacyDefaults: Set<String> = ["TDS Car Kit", "CarPlays", "CarWithin"]
+        nameField.text = savedName.map { legacyDefaults.contains($0) ? "EvoPlay" : $0 } ?? "EvoPlay"
         ipField.text = ReceiverConfiguration.localIPv4Addresses().first
         let selectedPreset = WiFiPresetStore.selected()
         ssidField.text = selectedPreset?.ssid ?? UserDefaults.standard.string(forKey: "wifiSSID")
@@ -597,7 +585,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         receiver.onBrowserStruggling = { [weak self] peer, reason in self?.browserStruggling(peer: peer, reason: reason) }
         receiver.onCarUIRequested = { [weak self] in
             guard let self else { return }
-            self.log("在 CarPlay 中点按了 CarWithin 车辆按钮")
+            self.log("在 CarPlay 中点按了 EvoPlay 车辆按钮")
             self.hideFullscreen(); self.revealSettings()
         }
         receiver.onAirPlayReady = { [weak self] id in
@@ -697,9 +685,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(airPlayAudioRouteChanged),
             name: AVAudioSession.routeChangeNotification, object: nil)
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.checkForUpdates(manual: false)
-        }
     }
     deinit {
         wifiPathMonitor.cancel()
@@ -1050,7 +1035,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         config.showTouches = showTouchesSwitch.isOn
         if carButtonSwitch.isOn {
             config.oemIconPNG = customVehicleIcon ?? Self.carButtonIcon
-            config.oemIconLabel = String((nameField.text ?? "").prefix(12)).isEmpty ? "CarWithin" : String((nameField.text ?? "").prefix(12))
+            config.oemIconLabel = String((nameField.text ?? "").prefix(12)).isEmpty ? "EvoPlay" : String((nameField.text ?? "").prefix(12))
         }
         let source = outputMode != .browser ? headUnitOutput.selectedTitle
             : followsCarScreen ? (screen.map { "车机屏幕 \($0.title)" } ?? "尚无车机屏幕，用固定分辨率") : "固定尺寸"
@@ -1381,7 +1366,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if running || waitingForNetwork { stop(); return }
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
-        updateCheckTask?.cancel()
         view.endEditing(true)
         refreshNetworkAddresses()
         let channel = UInt8(channelField.text ?? "") ?? 36
@@ -1437,7 +1421,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if modeControl.selectedSegmentIndex == 1 {
             guard let identity else { return }
             guard let address = localCarPlayAddress else { waitForLocalNetwork(); return }
-            var config = ReceiverConfiguration(name: nameField.text ?? "CarWithin", address: address,
+            var config = ReceiverConfiguration(name: nameField.text ?? "EvoPlay", address: address,
                 ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: soundOutput != .phone,
                 videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
                 deviceID: ReceiverConfiguration.persistentDeviceID())
@@ -1476,7 +1460,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard let identity else { return }
         let addresses = ReceiverConfiguration.localIPv4Addresses()
         if !addresses.contains(ipField.text ?? "") { ipField.text = browserAddress ?? addresses.first }
-        var config = ReceiverConfiguration(name: nameField.text ?? "CarWithin", address: ipField.text ?? "",
+        var config = ReceiverConfiguration(name: nameField.text ?? "EvoPlay", address: ipField.text ?? "",
             ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: soundOutput != .phone,
             videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
             deviceID: ReceiverConfiguration.persistentDeviceID())
@@ -1644,7 +1628,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             : local ? "无需外接盒子，直接在这台 iPhone 上启动并显示 CarPlay。" : "接收另一台 iPhone 的导航、音乐和触控画面。"
         connectionHelp.text = remote
             ? "让 iPhone 和 iPad 连接同一个 Wi-Fi。"
-            : local ? "先在系统设置连接 Wi-Fi，再在 CarWithin 选择对应预设。"
+            : local ? "先在系统设置连接 Wi-Fi，再在 EvoPlay 选择对应预设。"
             : "先启动此接收屏，再从另一台 iPhone 发起连接。"
         refreshNetworkSummary()
         refreshVideoOutputSummary()
@@ -1683,9 +1667,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func becameActive() {
         refreshNetworkAddresses()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.checkForUpdates(manual: false)
-        }
         pictureInPicture.returnedToForeground()
         resumeLocalVideo()
         pictureInPicture.sourceMayBeReady()
@@ -1758,7 +1739,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard autoRestarts < 2 else { log("本次连接已自动重启 2 次，不再重启：\(reason)"); return }
         // Restarting off screen would drop the background keep-alive; wait until the app is back.
         guard UIApplication.shared.applicationState == .active else {
-            pendingRestartReason = reason; log("回到 CarWithin 后重启：\(reason)"); return
+            pendingRestartReason = reason; log("回到 EvoPlay 后重启：\(reason)"); return
         }
         restartCarPlay(reason: reason, forPerformance: true)
     }
@@ -1815,7 +1796,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         DispatchQueue.main.async { [weak self] in self?.applyAppearance() }
     }
     @objc private func backgrounded() {
-        updateCheckTask?.cancel()
         receiverBrowser.stop()
         guard running else { return }
         // willResignActive may have failed to start it (e.g. the session was busy); try once more
@@ -1836,7 +1816,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             logView.text = lines.joined(separator: "\n")
             if !logView.text.isEmpty { logView.scrollRangeToVisible(NSRange(location: logView.text.utf16.count - 1, length: 1)) }
         }
-        NSLog("[CarWithin] %@", message)
+        NSLog("[EvoPlay] %@", message)
     }
 }
 
@@ -1971,7 +1951,7 @@ extension ReceiverViewController {
     }
     @objc private func receiverNameChanged() {
         guard !running else { return }
-        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
+        UserDefaults.standard.set(nameField.text ?? "EvoPlay", forKey: "receiverName")
     }
 
     /// Shows settings and, when needed, takes the user to the relevant connection settings.
@@ -2000,7 +1980,7 @@ extension ReceiverViewController {
 
     fileprivate func settingsDismissed() {
         view.endEditing(true)
-        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
+        UserDefaults.standard.set(nameField.text ?? "EvoPlay", forKey: "receiverName")
         saveHeadUnitOutput()
         refreshNetworkSummary(); refreshVideoOutputSummary(); updateVideoAspect()
         updatePictureInPicturePolicy()
@@ -2017,28 +1997,14 @@ extension ReceiverViewController {
         (settingsNavigation ?? self).present(alert, animated: true)
     }
 
-    private func aboutLinks() -> [SettingsRow] {
-        [
-            .externalLink("GitHub 项目", icon: ("chevron.left.forwardslash.chevron.right", .systemIndigo)) {
-                UIApplication.shared.open(Self.projectURL)
-            },
-            .action("检查更新", icon: ("arrow.clockwise.circle.fill", .systemBlue), detail: { [unowned self] in
-                self.checkingForUpdates ? "检查中…" : nil
-            }) { [unowned self] in self.checkForUpdates() },
-            .action("版本记录", icon: ("clock.arrow.circlepath", .systemPurple)) { [unowned self] in
-                self.showVersionHistory()
-            }
-        ]
-    }
-
     private func usagePage() -> SettingsPageController {
         page("使用说明") {
             [
                 SettingsSection("1. 先连 Wi-Fi", [
                     .guide("让 iPhone 加入 Wi-Fi", icon: ("wifi", .systemBlue),
-                           "路由器、车机 Wi-Fi 或另一台手机的热点都可以。有网、没网都能投屏。运行 CarWithin 的 iPhone 需要实际加入 Wi-Fi，自己开热点不能代替这一步。"),
+                           "路由器、车机 Wi-Fi 或另一台手机的热点都可以。有网、没网都能投屏。运行 EvoPlay 的 iPhone 需要实际加入 Wi-Fi，自己开热点不能代替这一步。"),
                     .guide("选择同名预设", icon: ("list.bullet", .systemBlue),
-                           "回到 CarWithin，在「Wi-Fi 预设」选择刚连的网络。第一次用，在「Wi-Fi 与网络」添加。")
+                           "回到 EvoPlay，在「Wi-Fi 预设」选择刚连的网络。第一次用，在「Wi-Fi 与网络」添加。")
                 ]),
                 SettingsSection("2. 选一种输出", [
                     .guide("浏览器", icon: ("globe", .systemTeal),
@@ -2072,83 +2038,22 @@ extension ReceiverViewController {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    private var canAutomaticallyCheckUpdates: Bool {
-        UIApplication.shared.applicationState == .active && !running
-            && viewIfLoaded?.window != nil && presentedViewController == nil
-    }
-
-    private func checkForUpdates(manual: Bool = true) {
-        guard UIApplication.shared.applicationState == .active, !checkingForUpdates else { return }
-        if !manual {
-            guard canAutomaticallyCheckUpdates, AppUpdatePolicy().shouldCheck() else { return }
-        }
-        checkingForUpdates = true
-        reloadVisibleSettings()
-        updateCheckTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                self.checkingForUpdates = false
-                self.updateCheckTask = nil
-                self.reloadVisibleSettings()
-            }
-            do {
-                let release = try await AppReleaseService().latest()
-                try Task.checkCancellation()
-                guard UIApplication.shared.applicationState == .active else { return }
-                if manual {
-                    guard self.settingsNavigation?.viewIfLoaded?.window != nil else { return }
-                    AppUpdatePolicy().succeeded()
-                    self.showVersionDetails(release, automatic: false)
-                } else {
-                    guard self.canAutomaticallyCheckUpdates else { return }
-                    AppUpdatePolicy().succeeded()
-                    if AppUpdatePolicy().shouldOffer(release, installedBuild: Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0) {
-                        self.showVersionDetails(release, automatic: true)
-                    }
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                AppUpdatePolicy().failed()
-                if manual, self.settingsNavigation?.viewIfLoaded?.window != nil {
-                    self.alert("检查更新失败", error.localizedDescription)
-                }
-            }
-        }
-    }
-
     private func showVersionHistory() {
+        let presenter = settingsNavigation ?? self
+        guard presenter.presentedViewController == nil else { return }
         let history = ReleaseHistoryView(installed: installedAppVersion, canDownload: { [weak self] in
             self?.running == false && UIApplication.shared.applicationState == .active
         })
         let controller = UIHostingController(rootView: NavigationStack {
             history.toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { [weak self] in self?.updateSheet?.dismiss(animated: true) }
+                    Button("完成") { [weak self] in self?.historySheet?.dismiss(animated: true) }
                 }
             }
         })
-        presentReleaseController(controller, automatic: false)
-    }
-
-    private func showVersionDetails(_ release: AppRelease, automatic: Bool) {
-        let details = ReleaseDetailView(
-            release: release, installed: installedAppVersion, latestTag: release.tag_name,
-            canDownload: { [weak self] in
-                self?.running == false && UIApplication.shared.applicationState == .active
-            }, automatic: automatic, close: { [weak self] in
-                self?.updateSheet?.dismiss(animated: true)
-            })
-        presentReleaseController(UIHostingController(rootView: NavigationStack { details }), automatic: automatic)
-    }
-
-    private func presentReleaseController(_ controller: UIViewController, automatic: Bool) {
-        let presenter = settingsNavigation ?? self
-        guard presenter.presentedViewController == nil else { return }
         controller.modalPresentationStyle = .pageSheet
         controller.sheetPresentationController?.detents = [.large()]
-        updateSheet = controller
-        updateSheetAutomatic = automatic
-        controller.presentationController?.delegate = self
+        historySheet = controller
         presenter.present(controller, animated: true)
     }
 
@@ -2187,17 +2092,11 @@ extension ReceiverViewController {
                     .control("驾驶位", icon: ("steeringwheel", .systemTeal), driveControl),
                     .page("车辆", icon: ("car.fill", .systemTeal)) { [unowned self] in self.vehiclePage() }
                 ]),
-                SettingsSection("后台与画中画", footer: "锁屏前，请在 iPhone「设置 › 通用 › CarPlay › CarWithin」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。", [
+                SettingsSection("后台与画中画", footer: "锁屏前，请在 iPhone「设置 › 通用 › CarPlay › EvoPlay」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。", [
                     .control("锁屏与后台继续运行", icon: ("lock.fill", .systemPurple), keepAliveSwitch),
                     .control("画中画开启时机", icon: ("pip.fill", .systemIndigo), pictureInPictureTiming)
                 ]),
-                SettingsSection("支持", [
-                    .externalLink("关注作者", icon: ("heart.fill", .systemRed), detail: "抖音") {
-                        UIApplication.shared.open(Self.authorURL)
-                    },
-                    .externalLink("请我喝杯咖啡", icon: ("cup.and.saucer.fill", .systemOrange), detail: "支付宝") {
-                        UIApplication.shared.open(Self.supportURL)
-                    },
+                SettingsSection([
                     .page("诊断与实验", icon: ("stethoscope", .systemTeal)) { [unowned self] in self.diagnosticsPage() },
                     .page("关于", icon: ("info.circle.fill", .systemGray)) { [unowned self] in self.aboutPage() }
                 ])
@@ -2249,7 +2148,7 @@ extension ReceiverViewController {
             let plan = planDisplay(for: targetScreen)
             return [
                 SettingsSection(footer: (followsCarScreen
-                    ? "启动时先用勾选的屏幕或最近一次设置。第一个网页接管后，窗口尺寸变化会在 CarWithin 回到前台时应用。更大的窗口按最高分辨率等比缩小。"
+                    ? "启动时先用勾选的屏幕或最近一次设置。第一个网页接管后，窗口尺寸变化会在 EvoPlay 回到前台时应用。更大的窗口按最高分辨率等比缩小。"
                     : "选择比例后按分辨率档位计算尺寸，短边至少 320 像素，实际值见下方。2K/4K 会增加发热和带宽。")
                     + (!followsCarScreen && outputMode != .browser ? "\n此输出受 1920×1080 限制，较长的竖屏比例以实际尺寸为准。" : "")
                     + "\n下次启动：\(plan.width)×\(plan.height) · \(plan.fps) FPS · \(plan.codec.displayName)", size),
@@ -2357,7 +2256,7 @@ extension ReceiverViewController {
             var sections: [SettingsSection] = []
             if modeControl.selectedSegmentIndex != 2 {
                 sections.append(SettingsSection(footer: "车辆名称显示在 iPhone 的 CarPlay 车辆列表中。", [
-                    .field("车辆名称", nameField, placeholder: "CarWithin")
+                    .field("车辆名称", nameField, placeholder: "EvoPlay")
                 ]))
             }
             var button: [SettingsRow] = [.control("显示车辆按钮", icon: ("car.side.fill", .systemTeal), carButtonSwitch)]
@@ -2828,7 +2727,11 @@ extension ReceiverViewController {
         page("关于") { [unowned self] in
             [
                 SettingsSection([.view(self.aboutIdentityCard())]),
-                SettingsSection(footer: "Copyright © 2026 xmz28", self.aboutLinks())
+                SettingsSection(footer: "基于 CarWithin · Copyright © 2026 xmz28", [
+                    .action("版本记录", icon: ("clock.arrow.circlepath", .systemPurple)) { [unowned self] in
+                        self.showVersionHistory()
+                    }
+                ])
             ]
         }
     }
@@ -2849,7 +2752,7 @@ extension ReceiverViewController {
             icon.heightAnchor.constraint(equalTo: icon.widthAnchor)
         ])
         let name = UILabel()
-        name.text = "CarWithin"
+        name.text = info["CFBundleDisplayName"] as? String ?? "EvoPlay"
         name.font = .preferredFont(forTextStyle: .title2)
         name.adjustsFontForContentSizeCategory = true
         name.accessibilityTraits.insert(.header)
@@ -2859,7 +2762,7 @@ extension ReceiverViewController {
         version.textColor = .secondaryLabel
         version.adjustsFontForContentSizeCategory = true
         let introduction = UILabel()
-        introduction.text = "在 iPhone 上启动 CarPlay，通过浏览器或兼容的 CarLife 车机查看和操控。"
+        introduction.text = "在 iPhone 上启动 CarPlay，并投送到浏览器、兼容车机或仪表。"
         introduction.font = .preferredFont(forTextStyle: .subheadline)
         introduction.textColor = .secondaryLabel
         introduction.adjustsFontForContentSizeCategory = true
@@ -2910,12 +2813,7 @@ extension ReceiverViewController: UIDocumentPickerDelegate {
 
 extension ReceiverViewController: UIAdaptivePresentationControllerDelegate {
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        if presentationController.presentedViewController === updateSheet {
-            if updateSheetAutomatic { AppUpdatePolicy().snooze() }
-            updateSheetAutomatic = false
-        } else {
-            settingsDismissed()
-        }
+        settingsDismissed()
     }
 }
 

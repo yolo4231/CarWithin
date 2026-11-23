@@ -89,8 +89,8 @@ enum ReleaseError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missing: return "GitHub 暂无公开版本。"
-        case .missingMetadata: return "当前公开版本尚未提供 ios-update.json，请在 GitHub 查看发布记录。"
-        case .invalid: return "版本信息无效，请查看 GitHub 发布记录。"
+        case .missingMetadata: return "当前公开版本缺少更新清单。"
+        case .invalid: return "版本信息无效，请稍后重试。"
         case .response(let status) where status == 403 || status == 429:
             return "GitHub 暂时限制了请求，请稍后重试。"
         case .response(let status): return "服务器返回 \(status)，请稍后重试。"

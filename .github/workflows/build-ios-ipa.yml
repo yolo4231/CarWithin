@@ -34,8 +34,9 @@ jobs:
         run: |
           app="$RUNNER_TEMP/carwithin-build/Build/Products/Release-iphoneos/TDSCarKit.app"
           staging="$RUNNER_TEMP/ipa-staging"
-          ipa="$RUNNER_TEMP/CarWithin-AE3-Pro-unsigned.ipa"
+          ipa="$RUNNER_TEMP/EvoPlay-AE3-Pro-unsigned.ipa"
           test -f "$app/Info.plist"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$app/Info.plist")" = EvoPlay
           test "$(lipo -archs "$app/TDSCarKit")" = arm64
           mkdir -p "$staging/Payload"
           ditto "$app" "$staging/Payload/TDSCarKit.app"
@@ -46,6 +47,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CarWithin-AE3-Pro-unsigned
-          path: ${{ runner.temp }}/CarWithin-AE3-Pro-unsigned.ipa
+          name: EvoPlay-AE3-Pro-unsigned
+          path: ${{ runner.temp }}/EvoPlay-AE3-Pro-unsigned.ipa
           if-no-files-found: error

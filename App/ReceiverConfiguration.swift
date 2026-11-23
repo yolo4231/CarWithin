@@ -3,7 +3,7 @@ import Darwin
 import Security
 
 struct ReceiverConfiguration {
-    var name = "CarWithin"
+    var name = "EvoPlay"
     static let discoveryType = "_tds-carkit._tcp."
     var address: String
     var ssid: String
@@ -39,7 +39,7 @@ struct ReceiverConfiguration {
     var showTouches = false
     /// Square PNG (≤ 192 px) for the car button on the CarPlay home screen; nil hides it.
     var oemIconPNG: Data?
-    var oemIconLabel = "CarWithin"
+    var oemIconLabel = "EvoPlay"
 
     /// Choices for "CarPlay 图标大小", as declared screen widths (OpenXPlay offers the same four).
     static let iconSizes: [(title: String, widthMM: Int)] = [("大", 125), ("默认", 200), ("较小", 250), ("最小", 300)]

@@ -116,7 +116,6 @@ struct ReleaseHistoryView: View {
     let installed: String
     let canDownload: () -> Bool
     @State private var releases: [AppRelease] = []
-    @State private var latestTag: String?
     @State private var page = 1
     @State private var hasNext = true
     @State private var loading = false
@@ -124,51 +123,62 @@ struct ReleaseHistoryView: View {
 
     var body: some View {
         List {
-            ForEach(releases) { release in
+            Section("EvoPlay") {
                 NavigationLink {
-                    ReleaseDetailView(release: release, installed: installed, latestTag: latestTag,
-                                      canDownload: canDownload)
+                    ScrollView {
+                        ReleaseNotesView(markdown: """
+                            # EvoPlay \(installed)
+
+                            - 新增极核 AE3 Pro 5 寸仪表输出，经实车验证可投屏。
+                            - 应用更名为 EvoPlay，精简设置和关于页面。
+                            - 保留版本记录与更新说明。
+                            """)
+                            .padding(24)
+                            .frame(maxWidth: 720, alignment: .leading)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .background(Color(uiColor: .systemGroupedBackground))
+                    .navigationTitle("版本更新记录")
+                    .navigationBarTitleDisplayMode(.inline)
                 } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
+                    HStack {
+                        Text("EvoPlay \(installed)")
+                        Spacer()
+                        Text("当前安装").foregroundStyle(.secondary).font(.caption)
+                    }
+                }
+            }
+            Section("CarWithin 历史版本") {
+                ForEach(releases) { release in
+                    NavigationLink {
+                        ReleaseDetailView(release: release, canDownload: canDownload)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(release.name ?? "CarWithin \(release.version)")
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            if ReleaseVersion(release.version) == ReleaseVersion(installed) {
-                                Text("当前安装").foregroundStyle(.secondary).font(.caption)
-                            }
-                            if release.tag_name == latestTag {
-                                Text("最新发布").foregroundStyle(.blue).font(.caption)
+                            if let date = release.published_at {
+                                Text(date, style: .date).font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        if let date = release.published_at {
-                            Text(date, style: .date).font(.caption).foregroundStyle(.secondary)
-                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
-            }
-            if let error {
-                Section {
+                if let error {
                     Text(error).foregroundStyle(.secondary)
                     Button("重试") { Task { await load() } }
+                } else if loading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                } else if releases.isEmpty {
+                    Text("暂无公开版本").foregroundStyle(.secondary)
+                } else if hasNext {
+                    Button("加载更多") { Task { await load() } }
                 }
-            } else if loading {
-                HStack { Spacer(); ProgressView(); Spacer() }
-            } else if releases.isEmpty {
-                Text("暂无公开版本").foregroundStyle(.secondary)
-            } else if hasNext {
-                Button("加载更多") { Task { await load() } }
-            }
-            Section {
-                Link("在 GitHub 查看", destination: AppRelease.repository.appendingPathComponent("releases"))
             }
         }
         .navigationTitle("版本记录")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if releases.isEmpty { await load() }
-            if latestTag == nil { latestTag = try? await AppReleaseService().latestTag() }
         }
     }
 
@@ -194,17 +204,9 @@ struct ReleaseHistoryView: View {
 
 struct ReleaseDetailView: View {
     let release: AppRelease
-    let installed: String
-    let latestTag: String?
     let canDownload: () -> Bool
-    var automatic = false
-    var close: (() -> Void)?
-    @Environment(\.dismiss) private var dismiss
     @State private var expandedNotes = false
 
-    private var installedBuild: Int {
-        Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0
-    }
     private var supportedOS: Bool {
         guard let minimum = release.update?.minimumOSVersion, let required = ReleaseVersion(minimum) else { return true }
         let os = ProcessInfo.processInfo.operatingSystemVersion
@@ -212,25 +214,14 @@ struct ReleaseDetailView: View {
         return required <= current
     }
 
-    private var status: String {
-        guard release.tag_name == latestTag, let update = release.update else {
-            return "版本详情"
-        }
-        return update.build > installedBuild ? "发现新版本" : "已是最新发布版本"
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(status, systemImage: automatic ? "arrow.down.circle" : "info.circle")
-                        .font(.subheadline.weight(.medium)).foregroundStyle(.blue)
                     Text("CarWithin \(release.version)").font(.title2.bold())
                     if let update = release.update {
                         Text("发布构建 \(update.build)").font(.subheadline).foregroundStyle(.secondary)
                     }
-                    Text("当前安装 \(installed)（\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-")）")
-                        .font(.subheadline).foregroundStyle(.secondary)
                     if let date = release.published_at {
                         Text(date, style: .date).font(.subheadline).foregroundStyle(.secondary)
                     }
@@ -241,8 +232,6 @@ struct ReleaseDetailView: View {
                         ReleaseNotesView(markdown: body).padding(.top, 12)
                     }
                 }
-                Link("在 GitHub 查看", destination: release.pageURL)
-                    .frame(maxWidth: .infinity)
             }
             .padding(24)
             .frame(maxWidth: 720, alignment: .leading)
@@ -259,16 +248,6 @@ struct ReleaseDetailView: View {
                 } else {
                     Text("此版本暂无 IPA 附件。").font(.footnote).foregroundStyle(.secondary)
                 }
-                if automatic {
-                    Button("下次再说") {
-                        AppUpdatePolicy().snooze()
-                        finish()
-                    }.buttonStyle(ReleaseActionStyle(kind: .secondary))
-                    Button("此版本不再提醒") {
-                        AppUpdatePolicy().ignore(release)
-                        finish()
-                    }.buttonStyle(ReleaseActionStyle(kind: .outline))
-                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -278,22 +257,8 @@ struct ReleaseDetailView: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .overlay(alignment: .top) { Divider() }
         }
-        .navigationTitle(automatic ? "版本更新" : "版本详情")
+        .navigationTitle("版本更新记录")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if close != nil {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        if automatic { AppUpdatePolicy().snooze() }
-                        finish()
-                    }
-                }
-            }
-        }
-    }
-
-    private func finish() {
-        if let close { close() } else { dismiss() }
     }
 }
 

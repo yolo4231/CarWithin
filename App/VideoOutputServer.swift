@@ -399,7 +399,7 @@ final class VideoOutputServer {
             }
             client.webCodecs = webCodecs
             client.usesAudioClock = browserAudio && object["audioClock"] as? Bool == true
-            sendJSON(["type": "status", "text": "已连接 CarWithin，正在等待关键帧"], to: client)
+            sendJSON(["type": "status", "text": "已连接 EvoPlay，正在等待关键帧"], to: client)
             replayGOP(to: client)
         case "audio":
             client.wantsAudio = client.usesAudioClock && object["enabled"] as? Bool == true
